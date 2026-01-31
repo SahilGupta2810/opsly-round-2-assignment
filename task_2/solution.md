@@ -1,62 +1,211 @@
-### Overview
-Central accounts act as **service hubs** that collect data, provide shared infrastructure, and enforce governance for member accounts (Dev, Sandbox, UAT, Prod). They do not host application workloads; instead they aggregate logs, security findings, network services, monitoring, and operational tooling so teams can operate with consistent controls and minimal blast radius. 
+# AWS Account Structure & Security 
+Your AWS environment is organized like a company with different departments. At the top is the **Root**, which sets rules that apply everywhere. Beneath it are **Organizational Units (OUs)**, each with a specific purpose. Some OUs focus on **security**, some on **infrastructure**, and others on **applications**.  
+
+Central accounts act like “shared service hubs.” They don’t run applications themselves but provide logging, security, networking, monitoring, and backup so that every team works with consistent guardrails. This reduces risk, ensures compliance, and makes operations smoother.  
+
+📖 Reference: [Foundational OUs – Organizing Your AWS Environment](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/foundational-ous.html)
 
 ---
 
-### Central accounts and their responsibilities
+## Organization Structure  
+```
+Root
+├── Security OU
+│   ├── Log Archive
+│   └── Security Tooling
+├── Infrastructure OU
+└── Application OU
+    ├── Production OU
+    └── Non-Production OU
+```
 
-#### Log Archive
-- **Purpose:** Consolidate immutable audit, configuration, and operational logs from every account (CloudTrail, AWS Config, VPC Flow Logs, application/OS logs).  
-- **How it’s used:** Organization trails and Config aggregators write to S3 in this account; teams access recent logs in their own accounts while long‑term retention and compliance copies remain in the archive.  
-- **Controls:** S3 versioning, bucket policies, KMS keys, and SCPs to prevent deletion or tampering. 
-
-#### Security Tooling (Audit)
-- **Purpose:** Act as delegated admin for security services and as the aggregation point for findings (GuardDuty, Security Hub, Macie, Inspector, Detective, IAM Access Analyzer).  
-- **How it’s used:** Member accounts forward findings; security teams use read‑only cross‑account roles for investigations; automated playbooks and SIEM ingestion run from here.  
-- **Controls:** Restrict access to authorized security personnel; use ViewOnly/ReadOnly permission sets for investigative access. 
-
-#### Network
-- **Purpose:** Central hub for VPCs, Transit Gateway, Route 53 resolvers, IPAM, VPNs, and Direct Connect.  
-- **How it’s used:** Share networking resources with member accounts via AWS Resource Access Manager (RAM); centralize routing, DNS, and inspection points; provide transitive connectivity and egress controls.  
-- **Controls:** Centralized route tables, inspection appliances, and IAM roles for network admins. 
-
-#### Operations Tooling
-- **Purpose:** Host Systems Manager, CloudFormation StackSets, DevOps Guru, Change Manager, and other operational services.  
-- **How it’s used:** Execute cross‑account automation, run remediation, and present centralized dashboards; delegate admin roles where needed. 
-
-#### Monitoring
-- **Purpose:** Aggregate metrics and observability (CloudWatch, Managed Prometheus, Managed Grafana, OpenSearch).  
-- **How it’s used:** Read‑only dashboards and visualizations for teams; connect to Log Archive (via Athena/OpenSearch) for log analysis; provide org‑wide alerts and health views. 
-
-#### Shared Services, Identity, Backup
-- **Shared Services:** Host Service Catalog, EC2 Image Builder, license management, and other reusable IT services.  
-- **Identity:** Centralize IAM Identity Center (SSO), directory services, and policy management for federated access.  
-- **Backup:** Centralize AWS Backup policies, KMS keys, and cross‑account backup orchestration. 
+- **Root:** The top level. Rules here apply everywhere.  
+- **Security OU:** Contains Log Archive and Security Tooling accounts. These are the “safety and compliance” departments.  
+- **Infrastructure OU:** Provides shared networking and core services.  
+- **Application OU:** Where teams run workloads. Split into Production (strict rules) and Non‑Production (more freedom for testing).  
 
 ---
 
-### Cross‑account interaction patterns
-- **Delegated admin model:** Central accounts are registered as delegated administrators for specific AWS services so they can view and manage org‑wide settings and findings.   
-- **Cross‑account IAM roles:** Member accounts assume least‑privilege roles in central accounts for read‑only access (investigation, monitoring) or limited admin tasks (network changes, backup restores).  
-- **Resource sharing:** Use AWS RAM to share VPCs, Transit Gateway attachments, IPAM pools, and other resources without copying them into each account.  
-- **Data flows:** Member accounts push logs/metrics to central accounts; central accounts push policies, templates, and shared artifacts back to member accounts (e.g., Service Catalog products, CloudFormation StackSets).
+## Security OU  
+
+### Log Archive  
+- **Purpose:** Collects all logs (like activity records) from every account.  
+- **Why it matters:** Logs are the “black box recorder” of your cloud. They prove compliance, help in investigations, and protect against tampering.  
+- **Controls:** Logs are stored in S3 with versioning, encryption, and strict rules to prevent deletion.  
+
+📖 Reference: [Centralized Logging with CloudWatch](https://docs.aws.amazon.com/prescriptive-guidance/latest/implementing-logging-monitoring-cloudwatch/cloudwatch-centralized-distributed-accounts.html)  
+
+**Sample SCP Policy (prevent log tampering):**  
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyLogTampering",
+      "Effect": "Deny",
+      "Action": [
+        "s3:DeleteBucket",
+        "s3:DeleteObject",
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:StopLogging"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
 ---
 
-### Implementation considerations and controls
-- **SCPs and guardrails:** Apply SCPs at OU level to enforce CloudTrail, Config, GuardDuty, Security Hub, deny log deletion, restrict regions, and prevent IAM user creation (force SSO).   
-- **Encryption and key management:** Use centralized KMS keys (or delegated keys) with strict key policies for log buckets, backups, and shared services.  
-- **Least privilege and break‑glass:** Provide developers with scoped permission sets via IAM Identity Center; reserve break‑glass roles in Prod with strong approval/audit controls.  
-- **Automation and observability:** Automate onboarding (Control Tower/Account Factory), enable org trails and Config aggregators, and route findings into Security Hub and SIEM for correlation. 
+### Security Tooling (Audit)  
+- **Purpose:** Acts as the “security control room.”  
+- **Why it matters:** Collects alerts from GuardDuty, Security Hub, Macie, Inspector, and more. Security teams use this account to investigate issues safely.  
+- **Controls:** Only security services are allowed here. No application workloads.  
+
+📖 Reference: [Get More Out of SCPs](https://aws.amazon.com/blogs/security/get-more-out-of-service-control-policies-in-a-multi-account-environment/)  
+
+**Sample SCP Policy (restrict to security services):**  
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowOnlySecurityServices",
+      "Effect": "Deny",
+      "NotAction": [
+        "cloudtrail:*",
+        "config:*",
+        "guardduty:*",
+        "securityhub:*",
+        "macie:*",
+        "inspector:*",
+        "detective:*",
+        "access-analyzer:*",
+        "s3:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyOrgTampering",
+      "Effect": "Deny",
+      "Action": [
+        "organizations:DeletePolicy",
+        "organizations:DetachPolicy",
+        "organizations:LeaveOrganization"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
 ---
 
-### Practical example flow (Dev → Central)
-1. **Dev account** runs workloads and generates CloudTrail, Config, VPC Flow Logs, and application logs.  
-2. **CloudTrail Org trail** and Config aggregator forward data to the **Log Archive** S3 bucket.  
-3. **GuardDuty/Inspector** in the Dev account send findings to the **Security Tooling** account (delegated admin).  
-4. **Monitoring account** pulls CloudWatch metrics and queries logs (Athena/OpenSearch) for dashboards.  
-5. **Network account** provides shared Transit Gateway and DNS resolution via RAM.  
-6. **Operations tooling** runs remediation playbooks or StackSets to apply fixes across accounts. 
+## Infrastructure OU  
+- **Purpose:** Provides shared networking services like VPCs, Transit Gateway, and DNS.  
+- **Why it matters:** Ensures all accounts connect securely without duplicating networks.  
+📖 Reference: [Networking for Multi‑AWS Accounts](https://aws.plainenglish.io/networking-for-multi-aws-accounts-ef4381bbd113)  
+
+**Sample SCP Policy (protect networking):**  
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyNetworkDeletion",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:DeleteVpc",
+        "ec2:DeleteTransitGateway",
+        "ec2:DeleteInternetGateway"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+---
+
+## Application OU  
+
+### Production OU  
+- **Purpose:** Runs critical workloads.  
+- **Controls:** Strict rules — enforce encryption, block risky services, prevent tampering with monitoring.  
+
+**Sample SCP Policy (production guardrails):**  
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyUnapprovedRegions",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": ["us-east-1", "ap-south-1"]
+        }
+      }
+    },
+    {
+      "Sid": "DenyDisableEncryption",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:DisableEbsEncryptionByDefault",
+        "s3:PutBucketEncryption",
+        "rds:ModifyDBInstance"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+---
+
+### Non‑Production OU  
+- **Purpose:** For testing and experimentation.  
+- **Controls:** More freedom, but still block dangerous actions like disabling security or creating IAM users.  
+
+**Sample SCP Policy (non‑production guardrails):**  
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenySecurityToolDisable",
+      "Effect": "Deny",
+      "Action": [
+        "guardduty:DeleteDetector",
+        "securityhub:DisableSecurityHub"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyIAMUserCreation",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateUser",
+        "iam:DeleteUser"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+📖 Reference: [3 SCP Examples to Secure Accounts](https://dev.to/aws-builders/3-aws-service-control-policy-scp-examples-to-secure-your-accounts-14bl)  
+
+---
+
+## Example Flow  
+- A Dev account runs workloads and generates logs.  
+- Logs are sent to the **Log Archive** in the Security OU.  
+- Security alerts go to the **Security Tooling** account.  
+- Monitoring shows dashboards and alerts.  
+- Network provides shared connectivity.  
+- Operations tools run fixes across accounts.  
 
 ---
