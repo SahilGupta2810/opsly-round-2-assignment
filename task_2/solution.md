@@ -1,70 +1,70 @@
-# AWS Account Structure & Security 
-Your AWS environment is organized like a company with different departments. At the top is the **Root**, which sets rules that apply everywhere. Beneath it are **Organizational Units (OUs)**, each with a specific purpose. Some OUs focus on **security**, some on **infrastructure**, and others on **applications**.  
+## 🏗️ Multi-Account Structure with AWS Organizations or Control Tower
 
-Central accounts act like “shared service hubs.” They don’t run applications themselves but provide logging, security, networking, monitoring, and backup so that every team works with consistent guardrails. This reduces risk, ensures compliance, and makes operations smoother.  
+Use **AWS Organizations** or **AWS Control Tower** to create a secure, scalable multi-account setup. Control Tower simplifies setup with Account Factory, preconfigured guardrails, and centralized logging.
 
-📖 Reference: [Foundational OUs – Organizing Your AWS Environment](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/foundational-ous.html)
-
----
-
-## Organization Structure  
+### Organizational Units (OUs) and Accounts
 ```
 Root
+├── Management OU
+│   └── Management Account
 ├── Security OU
-│   ├── Log Archive
-│   └── Security Tooling
-├── Infrastructure OU
+│   ├── Log Archive Account
+│   └── Security Tooling Account
+├── Shared Services OU
+│   └── Shared Services Account
 └── Application OU
-    ├── Production OU
-    └── Non-Production OU
+    ├── Sandbox Account
+    ├── Development Account
+    ├── UAT Account
+    └── Production Account
 ```
 
-- **Root:** The top level. Rules here apply everywhere.  
-- **Security OU:** Contains Log Archive and Security Tooling accounts. These are the “safety and compliance” departments.  
-- **Infrastructure OU:** Provides shared networking and core services.  
-- **Application OU:** Where teams run workloads. Split into Production (strict rules) and Non‑Production (more freedom for testing).  
+### Purpose of Each Account
+
+| OU / Account            | Purpose                                                                 |
+|------------------------|-------------------------------------------------------------------------|
+| **Management Account**  | Billing, governance, Control Tower setup, SCP enforcement               |
+| **Log Archive**         | Immutable storage for CloudTrail, Config, VPC Flow Logs                 |
+| **Security Tooling**    | Aggregates findings from GuardDuty, Security Hub, Macie, Inspector      |
+| **Shared Services**     | Hosts networking (VPCs, Transit Gateway), IAM Identity Center, backups  |
+| **Sandbox**             | Free experimentation with relaxed guardrails                            |
+| **Development**         | Active development, CI/CD pipelines                                     |
+| **UAT**                 | Pre-production testing and validation                                   |
+| **Production**          | Runs live workloads with strict security and monitoring                 |
 
 ---
 
-## Security OU  
+## 🔐 Governance with SCPs (Service Control Policies)
 
-### Log Archive  
-- **Purpose:** Collects all logs (like activity records) from every account.  
-- **Why it matters:** Logs are the “black box recorder” of your cloud. They prove compliance, help in investigations, and protect against tampering.  
-- **Controls:** Logs are stored in S3 with versioning, encryption, and strict rules to prevent deletion.  
+SCPs enforce boundaries across accounts. They don’t grant permissions but restrict what’s allowed.
 
-📖 Reference: [Centralized Logging with CloudWatch](https://docs.aws.amazon.com/prescriptive-guidance/latest/implementing-logging-monitoring-cloudwatch/cloudwatch-centralized-distributed-accounts.html)  
-
-**Sample SCP Policy (prevent log tampering):**  
+### Root-Level SCPs
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "DenyLogTampering",
+      "Sid": "DenyIAMUserCreation",
       "Effect": "Deny",
-      "Action": [
-        "s3:DeleteBucket",
-        "s3:DeleteObject",
-        "cloudtrail:DeleteTrail",
-        "cloudtrail:StopLogging"
-      ],
+      "Action": ["iam:CreateUser", "iam:DeleteUser"],
       "Resource": "*"
+    },
+    {
+      "Sid": "RestrictRegions",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": ["us-east-1", "ap-south-1"]
+        }
+      }
     }
   ]
 }
 ```
 
----
-
-### Security Tooling (Audit)  
-- **Purpose:** Acts as the “security control room.”  
-- **Why it matters:** Collects alerts from GuardDuty, Security Hub, Macie, Inspector, and more. Security teams use this account to investigate issues safely.  
-- **Controls:** Only security services are allowed here. No application workloads.  
-
-📖 Reference: [Get More Out of SCPs](https://aws.amazon.com/blogs/security/get-more-out-of-service-control-policies-in-a-multi-account-environment/)  
-
-**Sample SCP Policy (restrict to security services):**  
+### Security OU SCPs
 ```json
 {
   "Version": "2012-10-17",
@@ -73,15 +73,7 @@ Root
       "Sid": "AllowOnlySecurityServices",
       "Effect": "Deny",
       "NotAction": [
-        "cloudtrail:*",
-        "config:*",
-        "guardduty:*",
-        "securityhub:*",
-        "macie:*",
-        "inspector:*",
-        "detective:*",
-        "access-analyzer:*",
-        "s3:*"
+        "guardduty:*", "securityhub:*", "macie:*", "cloudtrail:*", "config:*", "s3:*"
       ],
       "Resource": "*"
     },
@@ -99,14 +91,7 @@ Root
 }
 ```
 
----
-
-## Infrastructure OU  
-- **Purpose:** Provides shared networking services like VPCs, Transit Gateway, and DNS.  
-- **Why it matters:** Ensures all accounts connect securely without duplicating networks.  
-📖 Reference: [Networking for Multi‑AWS Accounts](https://aws.plainenglish.io/networking-for-multi-aws-accounts-ef4381bbd113)  
-
-**Sample SCP Policy (protect networking):**  
+### Shared Services OU SCPs
 ```json
 {
   "Version": "2012-10-17",
@@ -115,9 +100,7 @@ Root
       "Sid": "DenyNetworkDeletion",
       "Effect": "Deny",
       "Action": [
-        "ec2:DeleteVpc",
-        "ec2:DeleteTransitGateway",
-        "ec2:DeleteInternetGateway"
+        "ec2:DeleteVpc", "ec2:DeleteTransitGateway", "ec2:DeleteInternetGateway"
       ],
       "Resource": "*"
     }
@@ -125,15 +108,9 @@ Root
 }
 ```
 
----
+### Application OU SCPs
 
-## Application OU  
-
-### Production OU  
-- **Purpose:** Runs critical workloads.  
-- **Controls:** Strict rules — enforce encryption, block risky services, prevent tampering with monitoring.  
-
-**Sample SCP Policy (production guardrails):**  
+**Production Account**
 ```json
 {
   "Version": "2012-10-17",
@@ -163,13 +140,7 @@ Root
 }
 ```
 
----
-
-### Non‑Production OU  
-- **Purpose:** For testing and experimentation.  
-- **Controls:** More freedom, but still block dangerous actions like disabling security or creating IAM users.  
-
-**Sample SCP Policy (non‑production guardrails):**  
+**Non-Production (Dev, UAT, Sandbox)**
 ```json
 {
   "Version": "2012-10-17",
@@ -186,26 +157,47 @@ Root
     {
       "Sid": "DenyIAMUserCreation",
       "Effect": "Deny",
-      "Action": [
-        "iam:CreateUser",
-        "iam:DeleteUser"
-      ],
+      "Action": ["iam:CreateUser", "iam:DeleteUser"],
       "Resource": "*"
     }
   ]
 }
 ```
 
-📖 Reference: [3 SCP Examples to Secure Accounts](https://dev.to/aws-builders/3-aws-service-control-policy-scp-examples-to-secure-your-accounts-14bl)  
+---
+
+## 👥 Access Management with AWS IAM Identity Center (SSO)
+
+Use **IAM Identity Center** to manage access across accounts. Integrate with your identity provider (e.g., Azure AD, Okta) and assign permission sets based on team roles.
+
+### Example Roles and Permissions
+
+| Role             | Access Scope                                                   |
+|------------------|----------------------------------------------------------------|
+| **Developers**    | Full access in Dev, UAT, Sandbox; Read-only in Prod            |
+| **Security Team** | Read-only across all accounts; Admin in Security OU            |
+| **Ops Team**      | Admin in Shared Services and Monitoring accounts               |
+
+- Use permission sets like `PowerUserAccess`, `ReadOnlyAccess`, or custom roles.
+- Enforce **least privilege** and **break-glass roles** for emergency access in Prod.
 
 ---
 
-## Example Flow  
-- A Dev account runs workloads and generates logs.  
-- Logs are sent to the **Log Archive** in the Security OU.  
-- Security alerts go to the **Security Tooling** account.  
-- Monitoring shows dashboards and alerts.  
-- Network provides shared connectivity.  
-- Operations tools run fixes across accounts.  
+## 🛡️ Centralized Security Services
+
+Deploy these services in **Security OU** and **Shared Services OU**:
+
+| Service         | Purpose                                                                 |
+|----------------|-------------------------------------------------------------------------|
+| **CloudTrail**   | Org-wide logging of API activity                                       |
+| **AWS Config**   | Tracks resource changes and compliance                                 |
+| **GuardDuty**    | Threat detection across accounts                                       |
+| **Security Hub** | Aggregates findings from GuardDuty, Macie, Inspector                   |
+| **Macie**        | Sensitive data discovery in S3                                         |
+| **Inspector**    | Vulnerability scanning for EC2 and containers                          |
+| **AWS Backup**   | Centralized backup policies and cross-account recovery                 |
+| **KMS**          | Centralized encryption key management                                  |
+
+Logs from all accounts should flow into the **Log Archive**, and findings into **Security Tooling**.
 
 ---
