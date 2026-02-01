@@ -92,6 +92,21 @@ module "vpc" {
   }
 }
 
+resource "aws_launch_template" "ng_gp3" {
+  name_prefix = "${local.cluster_name}-ng-"
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_type           = "gp3"
+      volume_size           = 8
+      iops                  = 3000
+      throughput            = 125
+      delete_on_termination = true
+    }
+  }
+}
+
 module "eks" {
   source             = "terraform-aws-modules/eks/aws"
   version            = "21.15.1"
@@ -116,6 +131,10 @@ module "eks" {
       max_size       = 5
       desired_size   = 2
       subnet_ids     = module.vpc.private_subnets
+      launch_template = {
+        id      = aws_launch_template.ng_gp3.id
+        version = aws_launch_template.ng_gp3.latest_version
+      }
 
       update_config = {
         max_unavailable_percentage = 33
@@ -136,6 +155,11 @@ module "eks" {
       desired_size   = 1
       subnet_ids     = module.vpc.private_subnets
 
+      launch_template = {
+        id      = aws_launch_template.ng_gp3.id
+        version = aws_launch_template.ng_gp3.latest_version
+      }
+
       update_config = {
         max_unavailable_percentage = 33
       }
@@ -154,5 +178,18 @@ module "eks" {
     }
   }
 
+  addons = {
+    coredns = {
+      most_recent = true
+      before_compute = true
+    }
+    kube-proxy = {
+      most_recent = true
+      before_compute = true
+    }
+    vpc-cni = {
+      before_compute = true
+    }
+  }
   tags = local.default_tags
 }
