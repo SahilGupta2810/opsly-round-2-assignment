@@ -1,75 +1,3 @@
-# # KMS key for EKS secrets encryption
-# resource "aws_kms_key" "eks_secrets" {
-#   description             = "KMS key for EKS secrets encryption (${local.cluster_name})"
-#   deletion_window_in_days = 7
-#   enable_key_rotation     = true
-
-#   policy = jsonencode({
-#     Version = "2012-10-17"
-#     Statement = [
-#       {
-#         Sid       = "AllowAccountRootFullAccess"
-#         Effect    = "Allow"
-#         Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
-#         Action    = "kms:*"
-#         Resource  = "*"
-#       },
-#       {
-#         Sid       = "AllowEKSUseViaService"
-#         Effect    = "Allow"
-#         Principal = { AWS = "*" }
-#         Action = [
-#           "kms:Encrypt",
-#           "kms:Decrypt",
-#           "kms:ReEncrypt*",
-#           "kms:GenerateDataKey*",
-#           "kms:DescribeKey"
-#         ]
-#         Resource = "*"
-#         Condition = {
-#           StringEquals = {
-#             "kms:CallerAccount" = data.aws_caller_identity.current.account_id
-#           }
-#           StringLike = {
-#             "kms:ViaService" = "eks.${data.aws_region.current.name}.amazonaws.com"
-#           }
-#         }
-#       }
-#     ]
-#   })
-
-#   tags = local.default_tags
-# }
-
-# resource "aws_kms_alias" "eks_secrets" {
-#   name          = "alias/eks-${var.environment}-secrets"
-#   target_key_id = aws_kms_key.eks_secrets.key_id
-# }
-
-# # Secrets Manager containers (values managed out-of-band)
-# resource "aws_secretsmanager_secret" "managed" {
-#   for_each = toset(var.secrets_manager_secret_names)
-
-#   name        = each.value
-#   description = "Managed by Terraform; secret value set out-of-band"
-
-#   tags = local.default_tags
-# }
-
-# # ECR private repositories
-# resource "aws_ecr_repository" "private" {
-#   for_each = toset(var.ecr_repository_names)
-
-#   name                 = each.value
-#   image_tag_mutability = "IMMUTABLE"
-
-#   image_scanning_configuration {
-#     scan_on_push = true
-#   }
-
-#   tags = local.default_tags
-# }
-
 # VPC
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
@@ -118,6 +46,8 @@ module "eks" {
 
   endpoint_public_access  = true
   endpoint_private_access = false
+  
+  enable_irsa = true
 
   enabled_log_types                      = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
   cloudwatch_log_group_retention_in_days = var.cloudwatch_log_group_retention_in_days
@@ -182,6 +112,7 @@ module "eks" {
     coredns = {
       most_recent = true
       before_compute = true
+
     }
     kube-proxy = {
       most_recent = true
@@ -189,6 +120,10 @@ module "eks" {
     }
     vpc-cni = {
       before_compute = true
+    }
+    aws-ebs-csi-driver = {
+      most_recent = true
+      service_account_role_arn = aws_iam_role.ebs_csi.arn
     }
   }
   tags = local.default_tags
