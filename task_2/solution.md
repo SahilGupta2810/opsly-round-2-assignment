@@ -56,7 +56,7 @@ SCPs enforce boundaries across accounts. They don’t grant permissions but rest
       "Resource": "*",
       "Condition": {
         "StringNotEquals": {
-          "aws:RequestedRegion": ["us-east-1", "ap-south-1"]
+          "aws:RequestedRegion": ["ap-south-1", "ap-south-1"]
         }
       }
     }
@@ -122,7 +122,7 @@ SCPs enforce boundaries across accounts. They don’t grant permissions but rest
       "Resource": "*",
       "Condition": {
         "StringNotEquals": {
-          "aws:RequestedRegion": ["us-east-1", "ap-south-1"]
+          "aws:RequestedRegion": ["ap-south-1", "ap-south-1"]
         }
       }
     },
