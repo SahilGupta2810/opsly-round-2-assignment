@@ -30819,7 +30819,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: argocd-application-controller
-  namespace: argocd
+  namespace: argocd-system
 ---
 apiVersion: v1
 data:

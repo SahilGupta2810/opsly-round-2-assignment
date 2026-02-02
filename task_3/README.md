@@ -6,7 +6,7 @@ This repository contains the Terraform configurations for setting up the infrast
 
 ## Networking: Virtual Private Cloud (VPC)
 
-- **Module "vpc"**: Creates a VPC using the `terraform-aws-modules/vpc/aws` module with version `5.0.0`.
+- **Module "vpc"**: Creates a VPC using the `terraform-aws-modules/vpc/aws` module with version `6.6.0`.
 - **CIDR**: `10.0.0.0/16`
 - **Subnets**: The configuration defines both private (`10.0.1.0/24`, `10.0.2.0/24`, `10.0.3.0/24`) and public (`10.0.4.0/24`, `10.0.5.0/24`, `10.0.6.0/24`) subnets spread across 3 availability zones.
 - **NAT Gateway**: Enabled to allow instances in the private subnets to initiate outbound traffic to the internet.
@@ -14,14 +14,56 @@ This repository contains the Terraform configurations for setting up the infrast
 
 ## Kubernetes: Amazon Elastic Kubernetes Service (EKS)
 
-- **Module "eks"**: Creates an EKS cluster using the `terraform-aws-modules/eks/aws` module with version `19.17.2`.
-- **Version**: Specifies Kubernetes version `1.28`.
-- **Node Groups**: Defines several managed node groups with varying configurations, mainly using spot instances.
+- **Module "eks"**: Creates an EKS cluster using the `terraform-aws-modules/eks/aws` module with version `21.15.1`.
+- **Version**: Kubernetes version is configurable via `kubernetes_version`.
+- **Node Groups**: Managed node groups for `general` and `ml` workloads with autoscaling bounds (min/max), and an ML taint to isolate ML workloads.
+
+## Karpenter (EKS)
+
+Karpenter is a Kubernetes node lifecycle manager. It watches for **unschedulable pods** (pods stuck in `Pending`) and provisions **new EC2 instances** that best satisfy the pods’ requirements (CPU/memory, instance type constraints, topology, taints/tolerations, etc). It can also **consolidate** and remove nodes when they’re empty/underutilized.
+
+### What’s required
+
+1. **A “base” node group for the Karpenter controller**
+   - Best practice: run the Karpenter controller on nodes that Karpenter does *not* manage (so it can always make progress).
+   - In this repo, the `general` managed node group is labeled and the Helm chart uses a `nodeSelector` so the controller lands there.
+
+2. **Discovery tags on subnets and the node security group**
+   - Karpenter discovers where it’s allowed to launch instances using tags:
+     - `karpenter.sh/discovery = opsly-dev`
+
+3. **Controller IAM + node IAM**
+   - Controller role: permissions to launch/terminate instances, read pricing/instance info, manage interruption handling, etc.
+   - Node role: standard EKS worker policies so nodes can join the cluster and pull images.
+   - This repo uses the EKS module Karpenter sub-module to create the controller role + node role + access entry + interruption queue.
+
+4. **Interruption handling (recommended)**
+   - SQS queue + EventBridge rules so Karpenter can react to Spot interruptions / rebalance recommendations / health events.
+
+5. **At least one `EC2NodeClass` + `NodePool`**
+   - Karpenter won’t launch anything until a `NodePool` references a `NodeClass`.
+   - See `karpenter-resources.yaml` (replace `<cluster-name>` with your EKS cluster name; for `dev.tfvars` it’s `opsly-dev`).
+
+### How it fits with HPA
+
+- **HPA** adds/removes **pods** when metrics (CPU/memory/custom) cross a threshold.
+- **Karpenter** adds/removes **nodes** so pending pods can schedule, and can bin-pack/consolidate nodes to reduce cost.
+
+## AWS Load Balancer Controller (ALB/NLB)
+
+The controller is installed and managed outside of this Terraform directory (you handled it manually). The core requirements are:
+
+- Subnets still need the usual discovery tags (`kubernetes.io/role/elb`, `kubernetes.io/role/internal-elb`, `kubernetes.io/cluster/<cluster-name>`).
+- A Kubernetes ServiceAccount in `kube-system` annotated with the IRSA role that has ELB/EC2 permissions.
+- The controller Helm release itself (pointed at the AWS charts) must be deployed into `kube-system`.
+
+Those pieces aren’t represented as Terraform resources anymore, so you won’t find `aws-load-balancer-controller.tf`, `crds.yaml`, or `iam_policy.json` in this directory.
 
 ## IAM Roles for Service Accounts (IRSA)
 
-- **Modules**: `efs_csi_irsa_role` and `irsa-ebs-csi` to create IAM roles for the EFS and EBS CSI drivers, respectively.
-- **Policies**: Attaches the necessary AWS-managed policies for EBS and EFS CSI drivers to function correctly.
+- IRSA is enabled on the EKS cluster (`enable_irsa = true`).
+- EBS CSI driver uses IRSA via `kube-system:ebs-csi-controller-sa` with the `AmazonEBSCSIDriverPolicy`.
+- Karpenter uses EKS Pod Identity (requires the `eks-pod-identity-agent` add-on) rather than an IRSA-annotated ServiceAccount.
 
 ## File System: Amazon Elastic File System (EFS)
 
