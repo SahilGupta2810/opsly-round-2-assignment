@@ -38,18 +38,6 @@ For each service, justify your choice between:
 - Cost considerations
 - Scaling strategy
 
-#### Remapping Table (Local → AWS)
-
-| Local Service Name | Local Setup - How it runs locally | AWS Service | AWS Choice Reasoning | Alternate AWS Suggestion with scenario |
-| --- | --- | --- | --- | --- |
-| UI | Localhost dev server (e.g., `npm run dev`) or container | App Runner | Managed container with autoscaling; good fit for Next.js SSR without managing cluster | S3 + CloudFront if the UI is fully static and can be built to static assets |
-| Backend | FastAPI on localhost or container (`uvicorn`) | ECS Fargate | Serverless containers, easy autoscaling, no node management | EKS if you want a single Kubernetes platform for UI + backend + ML workloads |
-| DB | MongoDB on localhost or Docker | MongoDB Atlas | Managed MongoDB with API compatibility and backups; minimal operational overhead | DynamoDB if you can redesign data model for serverless scale and lower ops |
-| LLM Inference (e.g., Ollama) | Local inference server on localhost or container | EKS (GPU node group) | GPU scheduling, stable long-running inference pods, fits shared cluster | ECS EC2 with GPU if you want simpler ops without Kubernetes |
-| Caching | Redis in local container or in-memory cache | ElastiCache Redis | Managed Redis with HA and scaling | ElastiCache Memcached if you only need ephemeral cache and simple sharding |
-
----
-
 ## Part 2: AWS Account Structure & Security
 
 ### Task 2.1: Multi-Account Structure
