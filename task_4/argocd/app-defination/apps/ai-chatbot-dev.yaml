@@ -1,0 +1,20 @@
+project: default
+source:
+  repoURL: https://github.com/SahilGupta2810/opsly-argocd-demo.git
+  path: helm/ai-chatbot-framework
+  targetRevision: main
+  helm:
+    valueFiles:
+      - values.yaml
+      - ../../env/dev.yaml
+    releaseName: opsly-ai-chatbot
+destination:
+  server: https://kubernetes.default.svc
+  namespace: dev
+syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true
+  syncOptions:
+    - CreateNamespace=true
+    - ApplyOutOfSyncOnly=true
