@@ -14,10 +14,16 @@ module "vpc" {
   single_nat_gateway     = false
   one_nat_gateway_per_az = true
 
-  tags = {
-    Terraform   = "true"
-    Environment = "dev"
+  public_subnet_tags = {
+    "kubernetes.io/role/elb" = 1
   }
+
+  private_subnet_tags = {
+    "kubernetes.io/role/internal-elb" = 1
+    "karpenter.sh/discovery"          = local.eks_cluster_name
+  }
+
+  tags = local.default_tags
 }
 
 resource "aws_launch_template" "ng_gp3" {
@@ -38,7 +44,7 @@ resource "aws_launch_template" "ng_gp3" {
 module "eks" {
   source             = "terraform-aws-modules/eks/aws"
   version            = "21.15.1"
-  name               = "${var.project_name}-${var.environment}"
+  name               = local.eks_cluster_name
   kubernetes_version = var.kubernetes_version
 
   vpc_id     = module.vpc.vpc_id
@@ -46,11 +52,15 @@ module "eks" {
 
   endpoint_public_access  = true
   endpoint_private_access = false
-  
+
   enable_irsa = true
 
   enabled_log_types                      = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
   cloudwatch_log_group_retention_in_days = var.cloudwatch_log_group_retention_in_days
+
+  node_security_group_tags = merge(local.default_tags, {
+    "karpenter.sh/discovery" = local.eks_cluster_name
+  })
 
   eks_managed_node_groups = {
     general = {
@@ -71,7 +81,8 @@ module "eks" {
       }
 
       labels = {
-        workload = "general"
+        workload                  = "general"
+        "karpenter.sh/controller" = "true"
       }
       tags = local.default_tags
     }
@@ -94,13 +105,6 @@ module "eks" {
         max_unavailable_percentage = 33
       }
 
-      taints = {
-        ml = {
-          key    = "ml"
-          value  = "true"
-          effect = "NO_SCHEDULE"
-        }
-      }
       labels = {
         workload = "ml"
       }
@@ -110,19 +114,23 @@ module "eks" {
 
   addons = {
     coredns = {
-      most_recent = true
+      most_recent    = true
       before_compute = true
 
     }
+    eks-pod-identity-agent = {
+      most_recent    = true
+      before_compute = true
+    }
     kube-proxy = {
-      most_recent = true
+      most_recent    = true
       before_compute = true
     }
     vpc-cni = {
       before_compute = true
     }
     aws-ebs-csi-driver = {
-      most_recent = true
+      most_recent              = true
       service_account_role_arn = aws_iam_role.ebs_csi.arn
     }
   }

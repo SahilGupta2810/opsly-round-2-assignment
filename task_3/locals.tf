@@ -1,5 +1,7 @@
 locals {
-  cluster_name = "${var.project_name}-eks-${var.environment}"
+  eks_cluster_name = "${var.project_name}-${var.environment}"
+  cluster_name     = "${var.project_name}-eks-${var.environment}"
+
   default_tags = {
     environment = var.environment
     account     = var.account

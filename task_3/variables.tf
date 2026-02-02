@@ -43,3 +43,9 @@ variable "cloudwatch_log_group_retention_in_days" {
   description = "Retention in days for the EKS control plane log group"
   type        = number
 }
+
+variable "karpenter_chart_version" {
+  description = "Helm chart version for Karpenter"
+  type        = string
+  default     = "1.6.0"
+}
