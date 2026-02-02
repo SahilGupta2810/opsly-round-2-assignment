@@ -15,12 +15,14 @@ module "vpc" {
   one_nat_gateway_per_az = true
 
   public_subnet_tags = {
-    "kubernetes.io/role/elb" = 1
+    "kubernetes.io/role/elb"                          = 1
+    "kubernetes.io/cluster/${local.eks_cluster_name}" = "shared"
   }
 
   private_subnet_tags = {
-    "kubernetes.io/role/internal-elb" = 1
-    "karpenter.sh/discovery"          = local.eks_cluster_name
+    "kubernetes.io/role/internal-elb"                 = 1
+    "kubernetes.io/cluster/${local.eks_cluster_name}" = "shared"
+    "karpenter.sh/discovery"                          = local.eks_cluster_name
   }
 
   tags = local.default_tags
