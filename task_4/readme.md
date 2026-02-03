@@ -1,32 +1,26 @@
-## Part 4: GitOps with ArgoCD
+# Task 4 — GitOps with Argo CD
 
-### Task 4.1: ArgoCD Installation
+This folder contains configuration and manifests for **Part 4: GitOps with Argo CD**.
 
-Deploy ArgoCD to the EKS cluster.
+## Completion status
 
-**Requirements:**
-- Install via Helm with HA configuration for production
-- Configure Ingress with TLS
-- Enable SSO integration (can be mocked/documented)
-- Configure RBAC for different teams
-- Set up notifications (Slack/Email webhooks)
+| Requirement | Status | Notes |
+| --- | --- | --- |
+| Task 4.1 — Argo CD installation | Partial | Helm values and upstream manifests are present, plus RBAC config for Argo CD users. HA/Ingress/TLS/SSO/notifications are not fully configured yet. |
+| Task 4.2 — Application definitions | Partial | Includes a single dev `Application`. Missing App-of-Apps pattern + staging/prod apps + env-specific sync policies. |
+| Task 4.3 — CI pipeline | Not done | No GitHub Actions/GitLab CI pipeline exists in this repo yet. |
 
-### Task 4.2: Application Definitions
+## Artifacts
 
-Create ArgoCD Application manifests for the AI Chatbot Framework.
+- `argocd/values.yaml` — Helm values (baseline; adjust for your cluster, ingress, SSO, etc.).
+- `argocd/manifests/` — upstream Argo CD install manifests (including HA variants and cluster RBAC overlays).
+- `argocd/rbac/rbac.yaml` — Argo CD UI/API RBAC (ConfigMap `argocd-rbac-cm`).
+- `argocd/app-defination/apps/ai-chatbot-dev.yaml` — example dev application.
 
-**Requirements:**
-- App-of-Apps pattern for managing multiple environments
-- Separate Applications for: dev, staging, production
-- Automated sync for dev, manual sync for production
-- Health checks and sync waves
-- Rollback configuration
+## Notes
 
-### Task 4.3: CI Pipeline 
-
-Create a GitHub Actions or GitLab CI pipeline that:
-- Builds Docker images for frontend and backend
-- Runs tests
-- Pushes to ECR
-- Updates image tags in the GitOps repository
-- Triggers ArgoCD sync (for dev environment)
+- Installation steps are documented in `argocd/readme.md`.
+- If you see sync failures due to missing Kubernetes permissions, either:
+  - apply cluster RBAC (`argocd/manifests/cluster-rbac`), or
+  - bind the controller to the target namespace (example: `argocd/manifests/addons/argocd-application-controller-dev-rbac.yaml`).
+- `ai-chatbot-dev.yaml` must point to a real chart path in the referenced repo; update `spec.source.path` to match your GitOps repo layout.
