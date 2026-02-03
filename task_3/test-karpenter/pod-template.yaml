@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: karpenter-test
+  labels:
+    workload: general
+spec:
+  containers:
+    - name: stress
+      image: ghcr.io/storax/stress-ng
+      args: ["--cpu", "2", "--timeout", "600s"]
+      resources:
+        requests:
+          cpu: "1500m"
+          memory: "2Gi"
+        limits:
+          cpu: "1500m"
+          memory: "2Gi"
+  nodeSelector:
+    workload: general
